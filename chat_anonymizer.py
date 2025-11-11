@@ -226,7 +226,7 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
                 log.debug(f"Deanonymized: '{deanonymized_content[:200]}...'")
 
         # Update the message with deanonymized content
-        message.message = deanonymized_content
+        message.deanonymized = deanonymized_content
 
         return message
 

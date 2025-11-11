@@ -25,16 +25,16 @@ class RegexPIIDetector:
             r'\b[A-Za-z0-9]([A-Za-z0-9._+-]*[A-Za-z0-9])?@[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}\b'
         )
         
-        # Phone patterns for international formats
+        # Simple phone pattern: 7+ digits that may be separated by spaces
         self.phone_pattern = re.compile(r'''
-            (?:\+\d{1,3}[-.\s]?)?          # Optional country code
-            (?:\(\d{1,4}\)|[\d]{1,4})      # Area code (parentheses or digits)
-            [-.\s]?                        # Optional separator
-            \d{2,4}                        # First part
-            [-.\s]?                        # Optional separator
-            \d{2,4}                        # Second part
-            (?:[-.\s]?\d{1,4})?            # Optional extension
-            (?:\s+ext\.?\s*\d+)?           # Optional "ext" extension
+            (?:
+                # International with + prefix (digits may have spaces)
+                \+(?:\d[\s]?){6,14}\d |
+                # International with 00 prefix (digits may have spaces)  
+                (?<!\d)00(?:\d[\s]?){5,13}\d(?!\d) |
+                # Any sequence of 7+ digits (may have spaces between them)
+                (?<!\d)(?:\d[\s]?){6,14}\d(?!\d)
+            )
         ''', re.VERBOSE)
         
         # Italian fiscal code pattern: 6 letters, 2 numbers, 1 letter, 2 numbers, 1 letter, 3 numbers, 1 letter
@@ -56,12 +56,13 @@ class RegexPIIDetector:
         for match in self.email_pattern.finditer(text):
             spans.append((match.start(), match.end(), 'EMAIL', match.group()))
         
-        # Phone detection
+        # Phone detection - simple approach: 7+ consecutive digits
         for match in self.phone_pattern.finditer(text):
             phone_text = match.group().strip()
-            # Filter out obvious non-phone patterns
             digits_only = re.sub(r'[^\d]', '', phone_text)
-            if 7 <= len(digits_only) <= 15:  # Reasonable phone number length
+            
+            # Must have 7-15 digits to be considered a phone
+            if 7 <= len(digits_only) <= 15:
                 spans.append((match.start(), match.end(), 'PHONE', phone_text))
         
         # Italian fiscal code detection
@@ -109,3 +110,4 @@ def create_detector(detector_type: str, **kwargs) -> object:
     
     else:
         raise ValueError(f"Unknown detector type: {detector_type}")
+    

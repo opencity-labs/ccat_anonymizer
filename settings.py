@@ -6,17 +6,17 @@ class PluginSettings(BaseModel):
     reversible_chat: bool = Field(
         title="Reversible Chat Anonymization",
         default=True,
-        description="If enabled, PII in chat messages is anonymized reversibly, restoring original data in responses. If disabled, anonymization is permanent.",
+        description="PII in chat messages is anonymized reversibly, restoring original data in responses (deanonymized field in the object). If disabled, anonymization is permanent.",
     )
     anonymize_rabbit_hole: bool = Field(
         title="Anonymize Rabbit Hole",
         default=False,
-        description="If enabled, anonymize documents before inserting into memory (rabbit hole).",
+        description="Anonymize documents before inserting into memory (rabbit hole).",
     )
     debug_logging: bool = Field(
         title="Debug Logging",
         default=False,
-        description="If enabled, show detailed debug logs for anonymization process.",
+        description="Show detailed debug logs for anonymization process.",
     )
     allowed_websites: str = Field(
         title="Allowed Websites",
