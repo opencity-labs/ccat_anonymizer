@@ -1,7 +1,7 @@
 from cat.mad_hatter.decorators import hook
 from cat.looking_glass.stray_cat import StrayCat
 from langchain.docstore.document import Document
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 import uuid
 from cat.log import log
 from urllib.parse import urlparse
@@ -170,7 +170,7 @@ def before_cat_reads_message(user_message_json: dict, cat) -> dict:
                 log.debug(f"Stored {len(mapping)} PII mappings for deanonymization. Total mappings: {len(cat._pii_mapping)}")
 
         # Update the user message with anonymized content
-        user_message_json['text'] = anonymized_message
+        user_message_json.text = anonymized_message
         if debug_enabled:
             log.debug(f"Updated user message with anonymized content: '{anonymized_message[:100]}...'")
 
@@ -226,7 +226,7 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
                 log.debug(f"Deanonymized: '{deanonymized_content[:200]}...'")
 
         # Update the message with deanonymized content
-        message['content'] = deanonymized_content
+        message.message = deanonymized_content
 
         return message
 
