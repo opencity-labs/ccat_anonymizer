@@ -31,7 +31,7 @@ The plugin provides three core functionalities:
 
 ## Settings
 
-- **`reversible_chat`**: *(Boolean, default: True)* - If enabled, PII in chat messages is anonymized reversibly, restoring original data in responses. If disabled, anonymization is permanent.
+- **`reversible_chat`**: *(Boolean, default: True)* - If enabled, PII in chat messages is anonymized reversibly, restoring original data in responses. If disabled, anonymization is permanent. The un-anonymized text is stored in the `message.deanonymized` field so that, even in subsequent messages, the LLM never sees personal data, but it can be shown in the frontend correctly.
 
 - **`anonymize_rabbit_hole`**: *(Boolean, default: False)* - If enabled, anonymize documents before inserting into memory (rabbit hole).
 
