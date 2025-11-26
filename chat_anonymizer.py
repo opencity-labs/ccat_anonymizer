@@ -1,12 +1,32 @@
 from cat.mad_hatter.decorators import hook
 from cat.looking_glass.stray_cat import StrayCat
 from langchain.docstore.document import Document
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 import uuid
 from cat.log import log
 from urllib.parse import urlparse
 
 from .detectors import create_detector
+
+
+def _remove_overlapping_spans(spans: List[Tuple[int, int, str, str]]) -> List[Tuple[int, int, str, str]]:
+    """Remove overlapping spans, preferring longer matches."""
+    if not spans:
+        return spans
+        
+    # Sort by start position, then by length (descending)
+    spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+    
+    non_overlapping = []
+    last_end = -1
+    
+    for span in spans:
+        start, end, entity_type, text = span
+        if start >= last_end:
+            non_overlapping.append(span)
+            last_end = end
+    
+    return non_overlapping
 
 
 def generate_placeholder(entity_type: str) -> str:
@@ -18,36 +38,70 @@ def generate_placeholder(entity_type: str) -> str:
 
 def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
     """
-    Anonymize text using regex detection for emails, phones, and Italian fiscal codes.
+    Anonymize text using regex detection for emails, phones, and Italian fiscal codes,
+    and optionally SpaCy detection for names, organizations, and addresses.
 
     Returns:
         Tuple of (anonymized_text, mapping_dict)
     """
     settings = cat.mad_hatter.get_plugin().load_settings()
     debug_enabled = settings.get('debug_logging', False)
+    enable_spacy = settings.get('enable_spacy_detection', False)
     
     if debug_enabled:
         log.debug(f"Starting PII detection on text: '{text[:100]}...'")
+        log.debug(f"SpaCy detection enabled: {enable_spacy}")
     
-    # Use regex for emails, phones, and fiscal codes
-    regex_detector = create_detector('regex')
-    regex_spans = regex_detector.detect(text)
+    all_spans = []
     
-    if regex_spans:
-        log.info(f"Detected {len(regex_spans)} PII entities")
+    # Always use regex for emails, phones, and fiscal codes
+    try:
+        regex_detector = create_detector('regex')
+        regex_spans = regex_detector.detect(text)
+        all_spans.extend(regex_spans)
+        
+        if debug_enabled and regex_spans:
+            log.debug(f"Regex detector found {len(regex_spans)} entities")
+    except Exception as e:
+        log.error(f"Error in regex detection: {e}")
+    
+    # Optionally use SpaCy for names, organizations, and addresses
+    if enable_spacy:
+        try:
+            spacy_detector = create_detector('spacy')
+            spacy_spans = spacy_detector.detect(text)
+            all_spans.extend(spacy_spans)
+            
+            if debug_enabled and spacy_spans:
+                log.debug(f"SpaCy detector found {len(spacy_spans)} entities")
+        except RuntimeError as e:
+            log.error(f"Failed to initialize SpaCy detector: {e}")
+            log.info("Continuing with regex detection only")
+            if debug_enabled:
+                log.debug("SpaCy detector initialization failed, models may be downloading in background")
+        except Exception as e:
+            log.error(f"Error in SpaCy detection: {e}")
+            if debug_enabled:
+                log.debug("Continuing with regex detection only")
+    
+    # Remove overlapping spans
+    all_spans = _remove_overlapping_spans(all_spans)
+    
+    if all_spans:
+        log.info(f"Detected {len(all_spans)} PII entities total")
         if debug_enabled:
-            entity_types = [span[2] for span in regex_spans]
+            entity_types = [span[2] for span in all_spans]
             log.debug(f"Detected PII entity types: {entity_types}")
-            for span in regex_spans:
+            for span in all_spans:
                 log.debug(f"  {span[2]}: '{span[3]}' at position {span[0]}-{span[1]}")
     
     # Sort spans by start position in reverse order to avoid offset issues
-    regex_spans.sort(key=lambda x: x[0], reverse=True)
+    all_spans.sort(key=lambda x: x[0], reverse=True)
     
     anonymized_text = text
     mapping = {}
     
-    for start, end, entity_type, entity_text in regex_spans:
+    for start, end, entity_type, entity_text in all_spans:
         placeholder = generate_placeholder(entity_type)
         anonymized_text = anonymized_text[:start] + placeholder + anonymized_text[end:]
         mapping[placeholder] = entity_text

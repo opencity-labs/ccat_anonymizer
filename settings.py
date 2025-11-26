@@ -13,6 +13,11 @@ class PluginSettings(BaseModel):
         default=False,
         description="Anonymize documents before inserting into memory (rabbit hole).",
     )
+    enable_spacy_detection: bool = Field(
+        title="Enable SpaCy Detection",
+        default=False,
+        description="Enable advanced multilingual PII detection using SpaCy models for names, organizations, and addresses.",
+    )
     debug_logging: bool = Field(
         title="Debug Logging",
         default=False,

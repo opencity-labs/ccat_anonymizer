@@ -19,6 +19,7 @@ The plugin provides three core functionalities:
 ## Features
 
 - Automatically detects and anonymizes emails, phone numbers, and Italian fiscal codes using regex patterns
+- **Advanced multilingual detection** using SpaCy models (`xx_ent_wiki_sm`, `en_core_web_sm`) for names, organizations and addresses
 - Reversible anonymization for chat messages - original data restored in AI responses while keeping memory clean
 - Document anonymization for rabbit hole content with trusted website exceptions
 - Configurable debug logging for detailed anonymization process monitoring
@@ -28,6 +29,7 @@ The plugin provides three core functionalities:
 
 - Cheshire Cat AI
 - PII Anonymizer plugin enabled in Cheshire Cat AI
+- **Optional**: SpaCy for advanced multilingual detection
 
 ## Settings
 
@@ -39,10 +41,13 @@ The plugin provides three core functionalities:
 
 - **`allowed_websites`**: *(Text Area, default: "")* - Comma-separated list of websites (domains) that should NOT be anonymized during memory insertion. E.g., 'example.com, https://foo.com/bar'
 
+- **`enable_spacy_detection`**: *(Boolean, default: False)* - Enable advanced multilingual detection using SpaCy models for names, organizations, and addresses. Models download automatically.
+
 ## Technical Details
 
 ### Detection Method
 - **Regex patterns**: Detects emails, phone numbers, and Italian fiscal codes using comprehensive regular expressions
+- **SpaCy NER**: When enabled, uses Named Entity Recognition to detect person names, organizations, and locations in multiple languages
 
 ### Hooks Used
 
