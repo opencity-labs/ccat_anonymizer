@@ -248,8 +248,8 @@ class SpacyPIIDetector:
                 # Map SpaCy entity labels to our types
                 if ent.label_ in ["PERSON", "PER"]:
                     entity_type = "PERSON"
-                elif ent.label_ in ["ORG", "ORGANIZATION"]:
-                    entity_type = "ORGANIZATION"
+                # elif ent.label_ in ["ORG", "ORGANIZATION"]:
+                #     entity_type = "ORGANIZATION"
                 elif ent.label_ in ["GPE", "LOC", "LOCATION", "FAC", "FACILITY"]:
                     # GPE: Countries, cities, states
                     # LOC: Mountain ranges, bodies of water
