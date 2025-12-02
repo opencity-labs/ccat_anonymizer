@@ -98,7 +98,8 @@ class RegexPIIDetector:
     This detector uses regular expressions to identify emails, phone numbers, and Italian fiscal codes.
     """
     
-    def __init__(self):
+    def __init__(self, settings=None):
+        self.settings = settings or {}
         # Email pattern - comprehensive but not overly permissive
         self.email_pattern = re.compile(
             r'\b[A-Za-z0-9]([A-Za-z0-9._+-]*[A-Za-z0-9])?@[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}\b'
@@ -132,21 +133,24 @@ class RegexPIIDetector:
         spans = []
         
         # Email detection
-        for match in self.email_pattern.finditer(text):
-            spans.append((match.start(), match.end(), 'EMAIL', match.group()))
+        if self.settings.get('anonymize_email', True):
+            for match in self.email_pattern.finditer(text):
+                spans.append((match.start(), match.end(), 'EMAIL', match.group()))
         
         # Phone detection - simple approach: 7+ consecutive digits
-        for match in self.phone_pattern.finditer(text):
-            phone_text = match.group().strip()
-            digits_only = re.sub(r'[^\d]', '', phone_text)
-            
-            # Must have 7-15 digits to be considered a phone
-            if 7 <= len(digits_only) <= 15:
-                spans.append((match.start(), match.end(), 'PHONE', phone_text))
+        if self.settings.get('anonymize_phone', True):
+            for match in self.phone_pattern.finditer(text):
+                phone_text = match.group().strip()
+                digits_only = re.sub(r'[^\d]', '', phone_text)
+                
+                # Must have 7-15 digits to be considered a phone
+                if 7 <= len(digits_only) <= 15:
+                    spans.append((match.start(), match.end(), 'PHONE', phone_text))
         
         # Italian fiscal code detection
-        for match in self.fiscal_code_pattern.finditer(text):
-            spans.append((match.start(), match.end(), 'FISCAL_CODE', match.group()))
+        if self.settings.get('anonymize_fiscal_code', True):
+            for match in self.fiscal_code_pattern.finditer(text):
+                spans.append((match.start(), match.end(), 'FISCAL_CODE', match.group()))
         
         # Remove overlapping spans (prefer longer ones, then by position)
         return self._remove_overlaps(spans)
@@ -180,16 +184,18 @@ class SpacyPIIDetector:
     Supports multilingual detection.
     """
     
-    def __init__(self, model_preference: List[str] = None):
+    def __init__(self, model_preference: List[str] = None, settings=None):
         """
         Initialize SpaCy detector with automatic model downloading.
         
         Args:
             model_preference: List of model names to try in order of preference
+            settings: Settings dictionary for conditional detection
         """
         if model_preference is None:
             model_preference = ["xx_ent_wiki_sm", "en_core_web_sm"]
         
+        self.settings = settings or {}
         self.nlp = None
         self.model_name = None
         
@@ -246,11 +252,11 @@ class SpacyPIIDetector:
                 entity_type = None
                 
                 # Map SpaCy entity labels to our types
-                if ent.label_ in ["PERSON", "PER"]:
+                if ent.label_ in ["PERSON", "PER"] and self.settings.get('anonymize_names', True):
                     entity_type = "PERSON"
-                # elif ent.label_ in ["ORG", "ORGANIZATION"]:
-                #     entity_type = "ORGANIZATION"
-                elif ent.label_ in ["GPE", "LOC", "LOCATION", "FAC", "FACILITY"]:
+                elif ent.label_ in ["ORG", "ORGANIZATION"] and self.settings.get('anonymize_organizations', True):
+                    entity_type = "ORGANIZATION"
+                elif ent.label_ in ["GPE", "LOC", "LOCATION", "FAC", "FACILITY"] and self.settings.get('anonymize_locations', True):
                     # GPE: Countries, cities, states
                     # LOC: Mountain ranges, bodies of water
                     # FAC: Buildings, airports, highways, bridges
@@ -305,12 +311,12 @@ def create_detector(detector_type: str, **kwargs) -> object:
     detector_type = detector_type.lower()
     
     if detector_type == 'regex':
-        return RegexPIIDetector()
+        return RegexPIIDetector(settings=kwargs.get('settings'))
     elif detector_type == 'spacy':
         if not _check_spacy_availability():
             raise RuntimeError("SpaCy not available. Please install with: pip install spacy")
         try:
-            return SpacyPIIDetector(**kwargs)
+            return SpacyPIIDetector(settings=kwargs.get('settings'), **{k: v for k, v in kwargs.items() if k != 'settings'})
         except RuntimeError as e:
             logger.error(f"Failed to initialize SpaCy detector: {e}")
             raise

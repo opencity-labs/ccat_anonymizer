@@ -46,17 +46,21 @@ def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
     """
     settings = cat.mad_hatter.get_plugin().load_settings()
     debug_enabled = settings.get('debug_logging', False)
-    enable_spacy = settings.get('enable_spacy_detection', False)
+    
+    # Check if any SpaCy detection is enabled
+    enable_spacy = (settings.get('anonymize_names', True) or 
+                   settings.get('anonymize_locations', True) or 
+                   settings.get('anonymize_organizations', True))
     
     if debug_enabled:
         log.debug(f"Starting PII detection on text: '{text[:100]}...'")
-        log.debug(f"SpaCy detection enabled: {enable_spacy}")
+        log.debug(f"SpaCy detection needed: {enable_spacy}")
     
     all_spans = []
     
     # Always use regex for emails, phones, and fiscal codes
     try:
-        regex_detector = create_detector('regex')
+        regex_detector = create_detector('regex', settings=settings)
         regex_spans = regex_detector.detect(text)
         all_spans.extend(regex_spans)
         
@@ -68,7 +72,7 @@ def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
     # Optionally use SpaCy for names, organizations, and addresses
     if enable_spacy:
         try:
-            spacy_detector = create_detector('spacy')
+            spacy_detector = create_detector('spacy', settings=settings)
             spacy_spans = spacy_detector.detect(text)
             all_spans.extend(spacy_spans)
             
