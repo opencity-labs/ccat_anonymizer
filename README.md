@@ -11,10 +11,11 @@ Protect sensitive personal information by intelligently anonymizing emails, phon
 
 **PII Anonymizer** is a plugin for Cheshire Cat AI that automatically detects and anonymizes Personally Identifiable Information (PII) to protect user privacy and ensure compliance with data protection regulations.
 
-The plugin provides three core functionalities:
+The plugin provides four core functionalities:
 1. **Chat Anonymization**: Automatically anonymizes PII in user messages with optional reversible restoration in responses
 2. **Document Anonymization**: Protects PII in scraped websites and uploaded documents before storing in memory
 3. **Trusted Sources**: Allows whitelisting of trusted websites to skip anonymization
+4. **Smart Allowedlist**: Automatically learns entities from ingested documents to prevent anonymizing known entities in chat
 
 ## Features
 
@@ -22,6 +23,7 @@ The plugin provides three core functionalities:
 - **Advanced multilingual detection** using SpaCy models (`xx_ent_wiki_sm`, `en_core_web_sm`) for names, organizations and addresses
 - Reversible anonymization for chat messages - original data restored in AI responses while keeping memory clean
 - Document anonymization for rabbit hole content with trusted website exceptions
+- **Smart Allowedlist** that learns from your documents to improve chat context
 - Configurable debug logging for detailed anonymization process monitoring
 - Privacy-first approach - only anonymizes when explicitly enabled for documents
 
@@ -41,7 +43,21 @@ The plugin provides three core functionalities:
 
 - **`allowed_websites`**: *(Text Area, default: "")* - Comma-separated list of websites (domains) that should NOT be anonymized during memory insertion. E.g., 'example.com, https://foo.com/bar'
 
+- **`enable_allowedlist`**: *(Boolean, default: True)* - Enable the allowedlist functionality. Entities found in documents will be added to the allowedlist and not anonymized in chat.
+
+- **`sqlite_db_path`**: *(String, default: "cat/data/anon_allowedlist.db")* - Path to the SQLite database for the allowedlist.
+
 - **`enable_spacy_detection`**: *(Boolean, default: False)* - Enable advanced multilingual detection using SpaCy models for names, organizations, and addresses. Models download automatically.
+
+## Allowedlist Mechanism
+
+The plugin features a smart **Allowedlist** mechanism designed to balance privacy with utility.
+
+1. **Learning Phase**: When you upload documents or scrape websites via the Rabbit Hole, the plugin detects entities (names, locations, organizations) in the content.
+2. **Storage**: These entities are stored in a local SQLite database (`cat/data/anon_allowedlist.db`) and loaded into memory for fast access.
+3. **Chat Phase**: When a user sends a message, the plugin checks if any detected entities match the allowedlist. If a match is found, that specific entity is **NOT** anonymized.
+
+This ensures that if your documents contain public information about "John Doe", and a user asks about "John Doe", the name remains visible to the LLM, allowing it to retrieve the correct information from memory.
 
 ## Technical Details
 

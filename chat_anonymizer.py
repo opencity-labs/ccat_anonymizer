@@ -7,6 +7,15 @@ from cat.log import log
 from urllib.parse import urlparse
 
 from .detectors import create_detector
+from .allowedlist import init_allowedlist, add_entity, is_allowed, is_initialized
+
+
+@hook
+def after_cat_bootstrap(cat):
+    settings = cat.mad_hatter.get_plugin().load_settings()
+    if settings.get('enable_allowedlist', True):
+        db_path = settings.get('sqlite_db_path', 'cat/data/anon_allowedlist.db')
+        init_allowedlist(db_path)
 
 
 def _remove_overlapping_spans(spans: List[Tuple[int, int, str, str]]) -> List[Tuple[int, int, str, str]]:
@@ -36,14 +45,7 @@ def generate_placeholder(entity_type: str) -> str:
     return f"[{entity_type}_{unique_id}]"
 
 
-def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
-    """
-    Anonymize text using regex detection for emails, phones, and Italian fiscal codes,
-    and optionally SpaCy detection for names, organizations, and addresses.
-
-    Returns:
-        Tuple of (anonymized_text, mapping_dict)
-    """
+def _detect_entities(text: str, cat: StrayCat) -> List[Tuple[int, int, str, str]]:
     settings = cat.mad_hatter.get_plugin().load_settings()
     debug_enabled = settings.get('debug_logging', False)
     
@@ -90,9 +92,31 @@ def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
     
     # Remove overlapping spans
     all_spans = _remove_overlapping_spans(all_spans)
+    return all_spans
+
+
+def anonymize_text(text: str, cat: StrayCat, check_allowedlist: bool = True) -> Tuple[str, Dict[str, str]]:
+    """
+    Anonymize text using regex detection for emails, phones, and Italian fiscal codes,
+    and optionally SpaCy detection for names, organizations, and addresses.
+
+    Returns:
+        Tuple of (anonymized_text, mapping_dict)
+    """
+    settings = cat.mad_hatter.get_plugin().load_settings()
+    debug_enabled = settings.get('debug_logging', False)
+    enable_allowedlist = settings.get('enable_allowedlist', True)
+    
+    all_spans = _detect_entities(text, cat)
     
     if all_spans:
         log.info(f"Detected {len(all_spans)} PII entities total")
+        
+        if check_allowedlist and enable_allowedlist:
+            allowed_entities = [span[3] for span in all_spans if is_allowed(span[3])]
+            if allowed_entities:
+                log.info(f"Entities found in allowedlist: {allowed_entities}")
+
         if debug_enabled:
             entity_types = [span[2] for span in all_spans]
             log.debug(f"Detected PII entity types: {entity_types}")
@@ -106,6 +130,12 @@ def anonymize_text(text: str, cat: StrayCat) -> Tuple[str, Dict[str, str]]:
     mapping = {}
     
     for start, end, entity_type, entity_text in all_spans:
+        # Check allowedlist
+        if check_allowedlist and enable_allowedlist and is_allowed(entity_text):
+            if debug_enabled:
+                log.debug(f"Skipping allowed entity: '{entity_text}'")
+            continue
+
         placeholder = generate_placeholder(entity_type)
         anonymized_text = anonymized_text[:start] + placeholder + anonymized_text[end:]
         mapping[placeholder] = entity_text
@@ -135,7 +165,20 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
     """
     settings = cat.mad_hatter.get_plugin().load_settings()
     debug_enabled = settings.get('debug_logging', False)
+    enable_allowedlist = settings.get('enable_allowedlist', True)
     
+    # Detect entities and add to allowedlist
+    if enable_allowedlist:
+        try:
+            spans = _detect_entities(doc.page_content, cat)
+            for _, _, entity_type, entity_text in spans:
+                add_entity(entity_text, entity_type)
+            
+            if debug_enabled and spans:
+                log.debug(f"Added {len(spans)} entities to allowedlist from document source: {doc.metadata.get('source', 'unknown')}")
+        except Exception as e:
+            log.error(f"Error detecting entities for allowedlist: {e}")
+
     # Check if rabbit hole anonymization is enabled
     anonymize_rabbit_hole = settings.get('anonymize_rabbit_hole', False)
     if not anonymize_rabbit_hole:
@@ -172,7 +215,7 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
             log.debug(f"Anonymizing document from source: {doc.metadata.get('source', 'unknown')}")
             log.debug(f"Document content length: {len(doc.page_content)}")
         
-        anonymized_content, mapping = anonymize_text(doc.page_content, cat)
+        anonymized_content, mapping = anonymize_text(doc.page_content, cat, check_allowedlist=False)
         
         if mapping:
             log.info(f"Document anonymized: {len(mapping)} PII entities found")

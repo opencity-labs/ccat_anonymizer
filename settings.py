@@ -43,6 +43,16 @@ class PluginSettings(BaseModel):
         default=True,
         description="Anonymize organization names using SpaCy NER (requires SpaCy installation).",
     )
+    enable_allowedlist: bool = Field(
+        title="Enable Allowedlist",
+        default=True,
+        description="Enable the allowedlist functionality. Entities found in documents will be added to the allowedlist and not anonymized in chat.",
+    )
+    sqlite_db_path: str = Field(
+        title="SQLite DB Path",
+        default="cat/data/anon_allowedlist.db",
+        description="Path to the SQLite database for the allowedlist.",
+    )
     debug_logging: bool = Field(
         title="Debug Logging",
         default=False,
