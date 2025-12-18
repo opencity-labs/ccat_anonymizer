@@ -53,11 +53,6 @@ class PluginSettings(BaseModel):
         default="cat/data/anon_allowedlist.db",
         description="Path to the SQLite database for the allowedlist.",
     )
-    debug_logging: bool = Field(
-        title="Debug Logging",
-        default=False,
-        description="Show detailed debug logs for anonymization process.",
-    )
     allowed_websites: str = Field(
         title="Allowed Websites",
         default="",

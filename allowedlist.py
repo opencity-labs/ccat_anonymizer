@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from cat.log import log
 from .db import AllowedEntity, get_engine, Base
 import os
+import json
 
 _allowedlist: Set[str] = set()
 _engine = None
@@ -25,9 +26,24 @@ def init_allowedlist(db_path: str):
             entities = session.query(AllowedEntity).all()
             _allowedlist = {e.text for e in entities}
             
-        log.info(f"Initialized anonymizer allowedlist with {len(_allowedlist)} entities from {db_path}")
+        log.info(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "initialization",
+            "data": {
+                "status": "success",
+                "db_path": db_path,
+                "loaded_entities": len(_allowedlist)
+            }
+        }))
     except Exception as e:
-        log.error(f"Failed to initialize allowedlist: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "initialization",
+            "data": {
+                "status": "error",
+                "error": str(e)
+            }
+        }))
 
 def add_entity(text: str, entity_type: str):
     global _allowedlist, _engine
@@ -37,7 +53,13 @@ def add_entity(text: str, entity_type: str):
     if _engine is None:
         # Try to initialize if not already (fallback, though init_allowedlist should be called)
         # But we need the path. 
-        log.warning("Allowedlist engine not initialized, cannot add entity")
+        log.warning(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "allowedlist_error",
+            "data": {
+                "error": "Allowedlist engine not initialized, cannot add entity"
+            }
+        }))
         return
 
     try:
@@ -48,9 +70,16 @@ def add_entity(text: str, entity_type: str):
                 session.add(entity)
                 session.commit()
                 _allowedlist.add(text)
-                log.debug(f"Added '{text}' to anonymizer allowedlist")
+                # Debug log for individual addition might be too noisy for JSON structure, keeping it simple or removing
+                # log.debug(f"Added '{text}' to anonymizer allowedlist")
     except Exception as e:
-        log.error(f"Failed to add entity to allowedlist: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "allowedlist_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
 
 def is_allowed(text: str) -> bool:
     return text in _allowedlist

@@ -39,8 +39,6 @@ The plugin provides four core functionalities:
 
 - **`anonymize_rabbit_hole`**: *(Boolean, default: False)* - If enabled, anonymize documents before inserting into memory (rabbit hole).
 
-- **`debug_logging`**: *(Boolean, default: False)* - If enabled, show detailed debug logs for anonymization process.
-
 - **`allowed_websites`**: *(Text Area, default: "")* - Comma-separated list of websites (domains) that should NOT be anonymized during memory insertion. E.g., 'example.com, https://foo.com/bar'
 
 - **`enable_allowedlist`**: *(Boolean, default: True)* - Enable the allowedlist functionality. Entities found in documents will be added to the allowedlist and not anonymized in chat.
@@ -76,3 +74,30 @@ This ensures that if your documents contain public information about "John Doe",
 Author: OpenCity Labs
 
 LinkedIn: https://www.linkedin.com/company/opencity-italia/
+
+## Log Schema
+
+This plugin uses structured JSON logging to facilitate monitoring and debugging. All logs follow this base structure:
+
+```json
+{
+  "component": "ccat_anonymizer",
+  "event": "<event_name>",
+  "data": {
+    ... <event_specific_data>
+  }
+}
+```
+
+### Event Types
+
+| Event Name | Description | Data Fields |
+|------------|-------------|-------------|
+| `pii_detection` | Logged when entities are detected in text | `total_found`, `entity_types` |
+| `text_anonymization` | Logged when text is successfully anonymized | `context`, `original_length`, `anonymized_length`, `entities_replaced`, `entities_skipped_allowedlist`, `allowed_entities` |
+| `text_deanonymization` | Logged when restoring original data | `mappings_available`, `success`, `restored_count` |
+| `allowedlist_update` | Logged when new entities are learned | `source`, `entities_added_count` |
+| `initialization` | Logged on startup/db init | `status`, `db_path`, `loaded_entities` |
+| `anonymization_skipped` | Logged when anonymization is skipped (e.g. allowed website) | `reason`, `url` |
+| `detection_fallback` | Logged when SpaCy detection fails and falls back to regex | `error` |
+| `*_error` | Error events (`detection_error`, `anonymization_error`, `deanonymization_error`, `allowedlist_error`) | `error`, `context` |

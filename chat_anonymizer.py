@@ -3,6 +3,7 @@ from cat.looking_glass.stray_cat import StrayCat
 from langchain.docstore.document import Document
 from typing import Dict, Tuple, List
 import uuid
+import json
 from cat.log import log
 from urllib.parse import urlparse
 
@@ -47,16 +48,11 @@ def generate_placeholder(entity_type: str) -> str:
 
 def _detect_entities(text: str, cat: StrayCat) -> List[Tuple[int, int, str, str]]:
     settings = cat.mad_hatter.get_plugin().load_settings()
-    debug_enabled = settings.get('debug_logging', False)
     
     # Check if any SpaCy detection is enabled
     enable_spacy = (settings.get('anonymize_names', True) or 
                    settings.get('anonymize_locations', True) or 
                    settings.get('anonymize_organizations', True))
-    
-    if debug_enabled:
-        log.debug(f"Starting PII detection on text: '{text[:100]}...'")
-        log.debug(f"SpaCy detection needed: {enable_spacy}")
     
     all_spans = []
     
@@ -66,10 +62,15 @@ def _detect_entities(text: str, cat: StrayCat) -> List[Tuple[int, int, str, str]
         regex_spans = regex_detector.detect(text)
         all_spans.extend(regex_spans)
         
-        if debug_enabled and regex_spans:
-            log.debug(f"Regex detector found {len(regex_spans)} entities")
     except Exception as e:
-        log.error(f"Error in regex detection: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "detection_error",
+            "data": {
+                "detector": "regex",
+                "error": str(e)
+            }
+        }))
     
     # Optionally use SpaCy for names, organizations, and addresses
     if enable_spacy:
@@ -78,17 +79,31 @@ def _detect_entities(text: str, cat: StrayCat) -> List[Tuple[int, int, str, str]
             spacy_spans = spacy_detector.detect(text)
             all_spans.extend(spacy_spans)
             
-            if debug_enabled and spacy_spans:
-                log.debug(f"SpaCy detector found {len(spacy_spans)} entities")
         except RuntimeError as e:
-            log.error(f"Failed to initialize SpaCy detector: {e}")
-            log.info("Continuing with regex detection only")
-            if debug_enabled:
-                log.debug("SpaCy detector initialization failed, models may be downloading in background")
+            log.error(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "detection_error",
+                "data": {
+                    "detector": "spacy",
+                    "error": str(e)
+                }
+            }))
+            log.info(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "detection_fallback",
+                "data": {
+                    "message": "Continuing with regex detection only"
+                }
+            }))
         except Exception as e:
-            log.error(f"Error in SpaCy detection: {e}")
-            if debug_enabled:
-                log.debug("Continuing with regex detection only")
+            log.error(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "detection_error",
+                "data": {
+                    "detector": "spacy",
+                    "error": str(e)
+                }
+            }))
     
     # Remove overlapping spans
     all_spans = _remove_overlapping_spans(all_spans)
@@ -104,46 +119,54 @@ def anonymize_text(text: str, cat: StrayCat, check_allowedlist: bool = True) -> 
         Tuple of (anonymized_text, mapping_dict)
     """
     settings = cat.mad_hatter.get_plugin().load_settings()
-    debug_enabled = settings.get('debug_logging', False)
     enable_allowedlist = settings.get('enable_allowedlist', True)
     
     all_spans = _detect_entities(text, cat)
     
     if all_spans:
-        log.info(f"Detected {len(all_spans)} PII entities total")
+        entity_types = [span[2] for span in all_spans]
+        log.info(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "pii_detection",
+            "data": {
+                "total_found": len(all_spans),
+                "entity_types": list(set(entity_types))
+            }
+        }))
         
         if check_allowedlist and enable_allowedlist:
             allowed_entities = [span[3] for span in all_spans if is_allowed(span[3])]
-            if allowed_entities:
-                log.info(f"Entities found in allowedlist: {allowed_entities}")
-
-        if debug_enabled:
-            entity_types = [span[2] for span in all_spans]
-            log.debug(f"Detected PII entity types: {entity_types}")
-            for span in all_spans:
-                log.debug(f"  {span[2]}: '{span[3]}' at position {span[0]}-{span[1]}")
+            # We'll log allowed entities in the final anonymization log
     
     # Sort spans by start position in reverse order to avoid offset issues
     all_spans.sort(key=lambda x: x[0], reverse=True)
     
     anonymized_text = text
     mapping = {}
+    skipped_allowed = []
     
     for start, end, entity_type, entity_text in all_spans:
         # Check allowedlist
         if check_allowedlist and enable_allowedlist and is_allowed(entity_text):
-            if debug_enabled:
-                log.debug(f"Skipping allowed entity: '{entity_text}'")
+            skipped_allowed.append(entity_text)
             continue
 
         placeholder = generate_placeholder(entity_type)
         anonymized_text = anonymized_text[:start] + placeholder + anonymized_text[end:]
         mapping[placeholder] = entity_text
-        if debug_enabled:
-            log.debug(f"Replaced '{entity_text}' with '{placeholder}'")
     
-    if debug_enabled:
-        log.debug(f"Anonymization complete. Original length: {len(text)}, Anonymized length: {len(anonymized_text)}, Mappings: {len(mapping)}")
+    if mapping or skipped_allowed:
+        log.info(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "text_anonymization",
+            "data": {
+                "original_length": len(text),
+                "anonymized_length": len(anonymized_text),
+                "entities_replaced": len(mapping),
+                "entities_skipped_allowedlist": len(skipped_allowed),
+                "allowed_entities": skipped_allowed
+            }
+        }))
     
     return anonymized_text, mapping
 
@@ -164,26 +187,40 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
     Only runs if anonymize_rabbit_hole setting is enabled.
     """
     settings = cat.mad_hatter.get_plugin().load_settings()
-    debug_enabled = settings.get('debug_logging', False)
     enable_allowedlist = settings.get('enable_allowedlist', True)
     
     # Detect entities and add to allowedlist
     if enable_allowedlist:
         try:
             spans = _detect_entities(doc.page_content, cat)
+            added_count = 0
             for _, _, entity_type, entity_text in spans:
+                # add_entity checks for duplicates, but we don't get a return value.
+                # We'll just count detected entities for now.
                 add_entity(entity_text, entity_type)
+                added_count += 1
             
-            if debug_enabled and spans:
-                log.debug(f"Added {len(spans)} entities to allowedlist from document source: {doc.metadata.get('source', 'unknown')}")
+            if added_count > 0:
+                log.info(json.dumps({
+                    "component": "ccat_anonymizer",
+                    "event": "allowedlist_update",
+                    "data": {
+                        "source": doc.metadata.get('source', 'unknown'),
+                        "entities_added_count": added_count
+                    }
+                }))
         except Exception as e:
-            log.error(f"Error detecting entities for allowedlist: {e}")
+            log.error(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "allowedlist_error",
+                "data": {
+                    "error": str(e)
+                }
+            }))
 
     # Check if rabbit hole anonymization is enabled
     anonymize_rabbit_hole = settings.get('anonymize_rabbit_hole', False)
     if not anonymize_rabbit_hole:
-        if debug_enabled:
-            log.debug("Rabbit hole anonymization disabled, skipping document anonymization")
         return doc
     
     allowed_websites = settings.get('allowed_websites', '')
@@ -207,18 +244,18 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
                         allowed_domain = allowed
                         allowed_path = ''
                 if domain == allowed_domain and path.startswith(allowed_path):
-                    log.info(f"Skipping anonymization for allowed source: {source}")
+                    log.info(json.dumps({
+                        "component": "ccat_anonymizer",
+                        "event": "anonymization_skipped",
+                        "data": {
+                            "reason": "allowed_website",
+                            "source": source
+                        }
+                    }))
                     return doc
     
     try:
-        if debug_enabled:
-            log.debug(f"Anonymizing document from source: {doc.metadata.get('source', 'unknown')}")
-            log.debug(f"Document content length: {len(doc.page_content)}")
-        
         anonymized_content, mapping = anonymize_text(doc.page_content, cat, check_allowedlist=False)
-        
-        if mapping:
-            log.info(f"Document anonymized: {len(mapping)} PII entities found")
         
         # Create a new document with anonymized content
         anonymized_doc = Document(
@@ -229,7 +266,14 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
         return anonymized_doc
 
     except Exception as e:
-        log.error(f"Failed to anonymize document: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "anonymization_error",
+            "data": {
+                "context": "document",
+                "error": str(e)
+            }
+        }))
         return doc
 
 
@@ -242,21 +286,12 @@ def before_cat_reads_message(user_message_json: dict, cat) -> dict:
     try:
         user_message = user_message_json.get('text', '')
         settings = cat.mad_hatter.get_plugin().load_settings()
-        debug_enabled = settings.get('debug_logging', False)
 
         if not user_message:
             return user_message_json
 
-        if debug_enabled:
-            log.debug(f"Anonymizing user message: '{user_message[:100]}...'")
-        
         anonymized_message, mapping = anonymize_text(user_message, cat)
         
-        if mapping:
-            log.info(f"User message anonymized: {len(mapping)} PII entities found")
-            if debug_enabled:
-                log.debug(f"PII entities: {list(mapping.keys())}")
-
         # Check if reversible chat is enabled
         reversible_chat = settings.get('reversible_chat', True)
         
@@ -267,18 +302,21 @@ def before_cat_reads_message(user_message_json: dict, cat) -> dict:
 
             # Merge mappings (in case there are multiple calls)
             cat._pii_mapping.update(mapping)
-            if debug_enabled:
-                log.debug(f"Stored {len(mapping)} PII mappings for deanonymization. Total mappings: {len(cat._pii_mapping)}")
 
         # Update the user message with anonymized content
         user_message_json.text = anonymized_message
-        if debug_enabled:
-            log.debug(f"Updated user message with anonymized content: '{anonymized_message[:100]}...'")
 
         return user_message_json
 
     except Exception as e:
-        log.error(f"Failed to anonymize user message: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "anonymization_error",
+            "data": {
+                "context": "user_message",
+                "error": str(e)
+            }
+        }))
         return user_message_json
 
 
@@ -290,20 +328,15 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
     """
     try:
         settings = cat.mad_hatter.get_plugin().load_settings()
-        debug_enabled = settings.get('debug_logging', False)
         
         # Check if reversible chat is enabled
         reversible_chat = settings.get('reversible_chat', True)
         
         if not reversible_chat:
-            if debug_enabled:
-                log.debug("Reversible chat disabled, skipping deanonymization")
             return message
 
         # Check if we have a mapping from the current session
         if not hasattr(cat, '_pii_mapping') or not cat._pii_mapping:
-            if debug_enabled:
-                log.debug("No PII mapping available for deanonymization")
             return message
 
         content = message.get('content', '')
@@ -311,20 +344,20 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
         if not content:
             return message
 
-        if debug_enabled:
-            log.debug(f"Deanonymizing response using {len(cat._pii_mapping)} PII mappings")
-            log.debug(f"Current mappings: {cat._pii_mapping}")
-            log.debug(f"Response content: '{content[:200]}...'")
-        
         # Deanonymize the content
         deanonymized_content = deanonymize_text(content, cat._pii_mapping)
         
         # Check if content actually changed
         if deanonymized_content != content:
-            log.info("Response deanonymized - original PII data restored")
-            if debug_enabled:
-                log.debug(f"Original: '{content[:200]}...'")
-                log.debug(f"Deanonymized: '{deanonymized_content[:200]}...'")
+            log.info(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "text_deanonymization",
+                "data": {
+                    "mappings_available": len(cat._pii_mapping),
+                    "success": True,
+                    "restored_count": len([k for k in cat._pii_mapping if k in content]) # Approximate count
+                }
+            }))
 
         # Update the message with deanonymized content
         message.deanonymized = deanonymized_content
@@ -332,5 +365,11 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
         return message
 
     except Exception as e:
-        log.error(f"Failed to deanonymize response: {e}")
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "deanonymization_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
         return message
