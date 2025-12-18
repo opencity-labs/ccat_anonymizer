@@ -59,6 +59,11 @@ class PluginSettings(BaseModel):
         description="Comma-separated list of websites (domains) that should NOT be anonymized during memory insertion. E.g., 'example.com, https://foo.com/bar'",
         extra={"type": "TextArea"},
     )
+    reset_db: bool = Field(
+        title="Reset Allowedlist Database",
+        default=False,
+        description="If checked, the allowedlist database will be deleted when settings are saved. This action cannot be undone.",
+    )
 
 @plugin
 def settings_model():

@@ -1,9 +1,10 @@
-from cat.mad_hatter.decorators import hook
+from cat.mad_hatter.decorators import hook, plugin
 from cat.looking_glass.stray_cat import StrayCat
 from langchain.docstore.document import Document
 from typing import Dict, Tuple, List
 import uuid
 import json
+import os
 from cat.log import log
 from urllib.parse import urlparse
 
@@ -369,3 +370,85 @@ def before_cat_sends_message(message: Dict, cat: StrayCat) -> Dict:
             }
         }))
         return message
+
+def save_plugin_settings_to_file(settings, plugin_path):
+    settings_file_path = os.path.join(plugin_path, "settings.json")
+    
+    # Load old settings to preserve any fields not in the new settings (if any)
+    old_settings = {}
+    if os.path.exists(settings_file_path):
+        try:
+            with open(settings_file_path, "r") as json_file:
+                old_settings = json.load(json_file)
+        except Exception as e:
+            log.error(f"Unable to load old plugin settings: {e}")
+    
+    # Merge new settings with old ones
+    updated_settings = {**old_settings, **settings}
+    
+    # Save settings to file
+    try:
+        with open(settings_file_path, "w") as json_file:
+            json.dump(updated_settings, json_file, indent=4)
+        return updated_settings
+    except Exception as e:
+        log.error(f"Unable to save plugin settings: {e}")
+        return {}
+
+
+@plugin
+def save_settings(settings):
+    """Handle plugin settings save with optional database deletion."""
+    reset_db = settings.get("reset_db", False)
+    
+    if reset_db:
+        db_path = settings.get("sqlite_db_path", "cat/data/anon_allowedlist.db")
+        
+        # Handle sqlite:/// prefix if present
+        if db_path.startswith("sqlite:///"):
+            file_path = db_path[10:]
+        else:
+            file_path = db_path
+            
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                log.info(json.dumps({
+                    "component": "ccat_anonymizer",
+                    "event": "database_reset",
+                    "data": {
+                        "status": "success",
+                        "path": file_path
+                    }
+                }))
+                
+                # Re-initialize the allowedlist (empty)
+                init_allowedlist(db_path)
+                
+            else:
+                log.warning(json.dumps({
+                    "component": "ccat_anonymizer",
+                    "event": "database_reset",
+                    "data": {
+                        "status": "warning",
+                        "message": "File does not exist",
+                        "path": file_path
+                    }
+                }))
+        except Exception as e:
+            log.error(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "database_reset",
+                "data": {
+                    "status": "error",
+                    "error": str(e),
+                    "path": file_path
+                }
+            }))
+        
+        # Reset the flag
+        settings["reset_db"] = False
+    
+    # Save settings
+    plugin_path = os.path.dirname(os.path.abspath(__file__))
+    return save_plugin_settings_to_file(settings, plugin_path)

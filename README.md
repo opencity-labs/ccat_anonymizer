@@ -45,6 +45,8 @@ The plugin provides four core functionalities:
 
 - **`sqlite_db_path`**: *(String, default: "cat/data/anon_allowedlist.db")* - Path to the SQLite database for the allowedlist.
 
+- **`reset_db`**: *(Boolean, default: False)* - If checked, the allowedlist database will be deleted when settings are saved. This action cannot be undone.
+
 - **`enable_spacy_detection`**: *(Boolean, default: False)* - Enable advanced multilingual detection using SpaCy models for names, organizations, and addresses. Models download automatically.
 
 ## Allowedlist Mechanism
