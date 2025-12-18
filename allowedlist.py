@@ -8,9 +8,6 @@ import json
 _allowedlist: Set[str] = set()
 _engine = None
 
-def is_initialized() -> bool:
-    return _engine is not None
-
 def init_allowedlist(db_path: str):
     global _allowedlist, _engine
     try:
@@ -70,8 +67,7 @@ def add_entity(text: str, entity_type: str):
                 session.add(entity)
                 session.commit()
                 _allowedlist.add(text)
-                # Debug log for individual addition might be too noisy for JSON structure, keeping it simple or removing
-                # log.debug(f"Added '{text}' to anonymizer allowedlist")
+                
     except Exception as e:
         log.error(json.dumps({
             "component": "ccat_anonymizer",

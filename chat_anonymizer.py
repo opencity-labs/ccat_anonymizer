@@ -8,7 +8,7 @@ from cat.log import log
 from urllib.parse import urlparse
 
 from .detectors import create_detector
-from .allowedlist import init_allowedlist, add_entity, is_allowed, is_initialized
+from .allowedlist import init_allowedlist, add_entity, is_allowed
 
 
 @hook
@@ -133,10 +133,6 @@ def anonymize_text(text: str, cat: StrayCat, check_allowedlist: bool = True) -> 
                 "entity_types": list(set(entity_types))
             }
         }))
-        
-        if check_allowedlist and enable_allowedlist:
-            allowed_entities = [span[3] for span in all_spans if is_allowed(span[3])]
-            # We'll log allowed entities in the final anonymization log
     
     # Sort spans by start position in reverse order to avoid offset issues
     all_spans.sort(key=lambda x: x[0], reverse=True)
