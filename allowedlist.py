@@ -1,7 +1,7 @@
 from typing import Set
 from sqlalchemy.orm import Session
 from cat.log import log
-from .db import AllowedEntity, get_engine, Base
+from .db import AllowedEntity, EntitySource, get_engine, Base
 import os
 import json
 
@@ -20,6 +20,11 @@ def init_allowedlist(db_path: str):
         Base.metadata.create_all(_engine)
         
         with Session(_engine) as session:
+            # Cleanup orphans: remove entities with no source
+            subquery = session.query(EntitySource.entity_text)
+            deleted_orphans = session.query(AllowedEntity).filter(AllowedEntity.text.notin_(subquery)).delete(synchronize_session=False)
+            session.commit()
+
             entities = session.query(AllowedEntity).all()
             _allowedlist = {e.text for e in entities}
             
@@ -29,7 +34,8 @@ def init_allowedlist(db_path: str):
             "data": {
                 "status": "success",
                 "db_path": db_path,
-                "loaded_entities": len(_allowedlist)
+                "loaded_entities": len(_allowedlist),
+                "cleaned_orphans": deleted_orphans
             }
         }))
     except Exception as e:
@@ -42,10 +48,11 @@ def init_allowedlist(db_path: str):
             }
         }))
 
-def add_entity(text: str, entity_type: str):
+def add_entity(text: str, entity_type: str, source: str = "unknown"):
     global _allowedlist, _engine
     if text in _allowedlist:
-        return
+        # Even if in allowedlist, we might need to add a new source
+        pass
 
     if _engine is None:
         # Try to initialize if not already (fallback, though init_allowedlist should be called)
@@ -61,17 +68,65 @@ def add_entity(text: str, entity_type: str):
 
     try:
         with Session(_engine) as session:
-            # Check if already exists (double check for race conditions or if set was out of sync)
-            if not session.query(AllowedEntity).filter_by(text=text).first():
+            # Check if entity exists
+            entity = session.query(AllowedEntity).filter_by(text=text).first()
+            if not entity:
                 entity = AllowedEntity(text=text, entity_type=entity_type)
                 session.add(entity)
-                session.commit()
-                _allowedlist.add(text)
+            
+            # Check if source exists for this entity
+            source_exists = session.query(EntitySource).filter_by(entity_text=text, source=source).first()
+            
+            if not source_exists:
+                new_source = EntitySource(entity_text=text, source=source)
+                session.add(new_source)
+                
+            session.commit()
+            _allowedlist.add(text)
                 
     except Exception as e:
         log.error(json.dumps({
             "component": "ccat_anonymizer",
             "event": "allowedlist_error",
+            "data": {
+                "error": str(e)
+            }
+        }))
+
+def remove_source(source: str):
+    global _allowedlist, _engine
+    if _engine is None:
+        return
+
+    try:
+        with Session(_engine) as session:
+            # 1. Delete all EntitySource entries with this source
+            session.query(EntitySource).filter_by(source=source).delete()
+            
+            # 2. Find entities that have no sources left
+            subquery = session.query(EntitySource.entity_text).distinct()
+            entities_to_remove = session.query(AllowedEntity).filter(AllowedEntity.text.notin_(subquery)).all()
+            
+            for ent in entities_to_remove:
+                if ent.text in _allowedlist:
+                    _allowedlist.remove(ent.text)
+                session.delete(ent)
+            
+            session.commit()
+            
+            log.info(json.dumps({
+                "component": "ccat_anonymizer",
+                "event": "source_removed",
+                "data": {
+                    "source": source,
+                    "removed_entities": len(entities_to_remove)
+                }
+            }))
+
+    except Exception as e:
+        log.error(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "remove_source_error",
             "data": {
                 "error": str(e)
             }

@@ -191,10 +191,11 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
         try:
             spans = _detect_entities(doc.page_content, cat)
             added_count = 0
+            source = doc.metadata.get('source', 'unknown')
             for _, _, entity_type, entity_text in spans:
                 # add_entity checks for duplicates, but we don't get a return value.
                 # We'll just count detected entities for now.
-                add_entity(entity_text, entity_type)
+                add_entity(entity_text, entity_type, source)
                 added_count += 1
             
             if added_count > 0:
@@ -202,7 +203,7 @@ def before_rabbithole_insert_memory(doc: Document, cat: StrayCat) -> Document:
                     "component": "ccat_anonymizer",
                     "event": "allowedlist_update",
                     "data": {
-                        "source": doc.metadata.get('source', 'unknown'),
+                        "source": source,
                         "entities_added_count": added_count
                     }
                 }))
