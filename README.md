@@ -55,7 +55,9 @@ The plugin features a smart **Allowedlist** mechanism designed to balance privac
 
 1. **Learning Phase**: When you upload documents or scrape websites via the Rabbit Hole, the plugin detects entities (names, locations, organizations) in the content.
 2. **Storage**: These entities are stored in a local SQLite database (`cat/data/anon_allowedlist.db`) and loaded into memory for fast access.
+   - **Normalization**: Entities are stored in lowercase to ensure case-insensitive matching. Phone numbers are further normalized by removing all spaces.
 3. **Chat Phase**: When a user sends a message, the plugin checks if any detected entities match the allowedlist. If a match is found, that specific entity is **NOT** anonymized.
+   - **Matching**: The check is performed on the normalized version of the entity (lowercase and no spaces for phones), so "John Doe" matches "john doe" and "+1 234 567" matches "+1234567".
 
 This ensures that if your documents contain public information about "John Doe", and a user asks about "John Doe", the name remains visible to the LLM, allowing it to retrieve the correct information from memory.
 

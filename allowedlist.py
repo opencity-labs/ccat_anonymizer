@@ -26,7 +26,12 @@ def init_allowedlist(db_path: str):
             session.commit()
 
             entities = session.query(AllowedEntity).all()
-            _allowedlist = {e.text for e in entities}
+            _allowedlist = set()
+            for e in entities:
+                text = e.text.lower()
+                if e.entity_type == 'PHONE':
+                    text = text.replace(" ", "")
+                _allowedlist.add(text)
             
         log.info(json.dumps({
             "component": "ccat_anonymizer",
@@ -50,6 +55,12 @@ def init_allowedlist(db_path: str):
 
 def add_entity(text: str, entity_type: str, source: str = "unknown"):
     global _allowedlist, _engine
+
+    # Normalize text
+    text = text.lower()
+    if entity_type == 'PHONE':
+        text = text.replace(" ", "")
+
     if text in _allowedlist:
         # Even if in allowedlist, we might need to add a new source
         pass
@@ -132,5 +143,10 @@ def remove_source(source: str):
             }
         }))
 
-def is_allowed(text: str) -> bool:
+def is_allowed(text: str, entity_type: str = None) -> bool:
+    # Normalize text
+    text = text.lower()
+    if entity_type == 'PHONE':
+        text = text.replace(" ", "")
+
     return text in _allowedlist

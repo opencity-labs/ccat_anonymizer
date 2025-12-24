@@ -144,7 +144,7 @@ def anonymize_text(text: str, cat: StrayCat, check_allowedlist: bool = True) -> 
     
     for start, end, entity_type, entity_text in all_spans:
         # Check allowedlist
-        if check_allowedlist and enable_allowedlist and is_allowed(entity_text):
+        if check_allowedlist and enable_allowedlist and is_allowed(entity_text, entity_type):
             skipped_allowed.append(entity_text)
             continue
 
