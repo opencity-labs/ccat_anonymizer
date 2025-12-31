@@ -1,4 +1,4 @@
-from sqlalchemy import String, create_engine, ForeignKey
+from sqlalchemy import String, create_engine, ForeignKey, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from typing import List
 
@@ -26,4 +26,15 @@ class EntitySource(Base):
         return f'EntitySource(entity_text={self.entity_text!r}, source={self.source!r})'
 
 def get_engine(db_path: str):
-    return create_engine(f"sqlite:///{db_path}")
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={'timeout': 15}
+    )
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
+
+    return engine
