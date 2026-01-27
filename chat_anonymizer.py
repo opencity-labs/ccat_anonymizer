@@ -19,6 +19,19 @@ def after_cat_bootstrap(cat):
         db_path = settings.get('sqlite_db_path', 'cat/data/anon_allowedlist.db')
         init_allowedlist(db_path)
 
+    # Check if any SpaCy detection is enabled
+    enable_spacy = (settings.get('anonymize_names', True) or 
+                   settings.get('anonymize_locations', True) or 
+                   settings.get('anonymize_organizations', True))
+
+    if enable_spacy:
+        try:
+            # This triggers model download if needed and caches the model
+            create_detector('spacy', settings=settings)
+            log.info("CCAT Anonymizer: Spacy models checked and ready.")
+        except Exception as e:
+            log.error(f"CCAT Anonymizer: Failed to initialize Spacy models: {e}")
+
 
 def _remove_overlapping_spans(spans: List[Tuple[int, int, str, str]]) -> List[Tuple[int, int, str, str]]:
     """Remove overlapping spans, preferring longer matches."""
