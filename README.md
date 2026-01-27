@@ -99,6 +99,7 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 |------------|-------------|-------------|
 | `pii_detection` | Logged when entities are detected in text | `total_found`, `entity_types` |
 | `text_anonymization` | Logged when text is successfully anonymized | `context`, `original_length`, `anonymized_length`, `entities_replaced`, `entities_skipped_allowedlist`, `allowed_entities` |
+| `user_message_anonymization` | Logged before cat reads message | `original_length`, `anonymized_length`, `anonymized_content` |
 | `text_deanonymization` | Logged when restoring original data | `mappings_available`, `success`, `restored_count` |
 | `allowedlist_update` | Logged when new entities are learned | `source`, `entities_added_count` |
 | `initialization` | Logged on startup/db init | `status`, `db_path`, `loaded_entities` |

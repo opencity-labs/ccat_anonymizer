@@ -8,7 +8,7 @@ import os
 from cat.log import log
 from urllib.parse import urlparse
 
-from .detectors import create_detector
+from .detectors import create_detector, check_and_download_spacy_models
 from .allowedlist import init_allowedlist, add_entity, is_allowed
 
 
@@ -27,7 +27,7 @@ def after_cat_bootstrap(cat):
     if enable_spacy:
         try:
             # This triggers model download if needed and caches the model
-            create_detector('spacy', settings=settings)
+            check_and_download_spacy_models()
             log.info("CCAT Anonymizer: Spacy models checked and ready.")
         except Exception as e:
             log.error(f"CCAT Anonymizer: Failed to initialize Spacy models: {e}")
@@ -316,6 +316,16 @@ def before_cat_reads_message(user_message_json: dict, cat) -> dict:
 
         # Update the user message with anonymized content
         user_message_json.text = anonymized_message
+
+        log.info(json.dumps({
+            "component": "ccat_anonymizer",
+            "event": "user_message_anonymization",
+            "data": {
+                "original_length": len(user_message),
+                "anonymized_length": len(anonymized_message),
+                "anonymized_content": anonymized_message
+            }
+        }))
 
         return user_message_json
 

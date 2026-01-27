@@ -322,4 +322,26 @@ def create_detector(detector_type: str, **kwargs) -> object:
             raise
     else:
         raise ValueError(f"Unknown detector type: {detector_type}. Supported types: 'regex', 'spacy'")
+
+
+def check_and_download_spacy_models(model_preference: List[str] = None) -> bool:
+    """
+    Explicitly check for and download Spacy models if needed.
+    """
+    if model_preference is None:
+        model_preference = ["xx_ent_wiki_sm", "en_core_web_sm"]
+        
+    if not _check_spacy_availability():
+        return False
+        
+    for model_name in model_preference:
+        if _get_spacy_model(model_name):
+            return True
+            
+    # Fallback
+    fallback_model = "en_core_web_sm"
+    if _get_spacy_model(fallback_model):
+        return True
+        
+    return False
     
