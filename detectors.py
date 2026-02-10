@@ -7,12 +7,11 @@ This module contains PII detection implementations:
 """
 
 import re
-import logging
 import subprocess
 import sys
 from typing import List, Tuple
-
-logger = logging.getLogger(__name__)
+from collections import defaultdict
+from cat.log import log
 
 # Global variables for SpaCy models to avoid repeated loading
 _spacy_models = {}
@@ -28,7 +27,6 @@ def _check_spacy_availability() -> bool:
         import spacy
         _spacy_available = True
     except ImportError:
-        logger.warning("SpaCy not installed. Install with: pip install spacy")
         _spacy_available = False
     
     return _spacy_available
@@ -36,22 +34,17 @@ def _check_spacy_availability() -> bool:
 def _download_model(model_name: str) -> bool:
     """Download a SpaCy model if not present."""
     try:
-        logger.info(f"Downloading SpaCy model: {model_name}")
         result = subprocess.run([
             sys.executable, "-m", "spacy", "download", model_name
         ], capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            logger.info(f"Successfully downloaded {model_name}")
             return True
         else:
-            logger.error(f"Failed to download {model_name}: {result.stderr}")
             return False
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout downloading {model_name}")
         return False
     except Exception as e:
-        logger.error(f"Error downloading {model_name}: {e}")
         return False
 
 def _get_spacy_model(model_name: str):
@@ -68,26 +61,20 @@ def _get_spacy_model(model_name: str):
         try:
             nlp = spacy.load(model_name)
             _spacy_models[model_name] = nlp
-            logger.info(f"Loaded SpaCy model: {model_name}")
             return nlp
         except OSError:
             # Model not found, try to download it
-            logger.info(f"SpaCy model '{model_name}' not found, attempting to download...")
             if _download_model(model_name):
                 # Try loading again after download
                 try:
                     nlp = spacy.load(model_name)
                     _spacy_models[model_name] = nlp
-                    logger.info(f"Successfully loaded downloaded model: {model_name}")
                     return nlp
                 except OSError:
-                    logger.error(f"Failed to load model '{model_name}' even after download")
                     return None
             else:
-                logger.error(f"Failed to download model '{model_name}'")
                 return None
     except ImportError:
-        logger.error("SpaCy not installed")
         return None
 
 
@@ -184,116 +171,160 @@ class SpacyPIIDetector:
     Supports multilingual detection.
     """
     
-    def __init__(self, model_preference: List[str] = None, settings=None):
+    def __init__(self, model_preference: List[str] = None, settings=None, confidence_threshold: float = 0.65):
         """
         Initialize SpaCy detector with automatic model downloading.
-        
+
         Args:
             model_preference: List of model names to try in order of preference
             settings: Settings dictionary for conditional detection
+            confidence_threshold: Minimum confidence score for entity detection
         """
         if model_preference is None:
             model_preference = ["xx_ent_wiki_sm", "en_core_web_sm"]
-        
+
         self.settings = settings or {}
         self.nlp = None
         self.model_name = None
-        
+        self.confidence_threshold = confidence_threshold
+
         if not _check_spacy_availability():
             raise RuntimeError("SpaCy not available. Please install with: pip install spacy")
-        
+
         # Try to load models in order of preference, downloading if necessary
         for model_name in model_preference:
-            logger.info(f"Attempting to load SpaCy model: {model_name}")
             nlp = _get_spacy_model(model_name)
             if nlp is not None:
                 self.nlp = nlp
                 self.model_name = model_name
-                logger.info(f"Successfully initialized SpaCy detector with model: {model_name}")
                 break
             else:
-                logger.warning(f"Failed to load model: {model_name}")
-        
+                pass
+
         if self.nlp is None:
             # If no preferred models work, try downloading a basic English model as fallback
             fallback_model = "en_core_web_sm"
-            logger.info(f"No preferred models available, trying fallback model: {fallback_model}")
             nlp = _get_spacy_model(fallback_model)
             if nlp is not None:
                 self.nlp = nlp
                 self.model_name = fallback_model
-                logger.info(f"Successfully initialized SpaCy detector with fallback model: {fallback_model}")
             else:
                 raise RuntimeError(
                     "Failed to load any SpaCy models. Please check your internet connection "
                     "and ensure you have sufficient permissions to download models."
                 )
-    
+
     def detect(self, text: str) -> List[Tuple[int, int, str, str]]:
         """
-        Detect person names, organizations, and locations using SpaCy NER.
-        
+        Detect person names, organizations, and locations using SpaCy NER with confidence scores.
+
         Args:
             text: Input text to analyze
-            
+
         Returns:
             List of tuples: (start_pos, end_pos, entity_type, entity_text)
         """
         if self.nlp is None:
             return []
-        
+
         spans = []
-        
+
         try:
-            # Process text with SpaCy
-            doc = self.nlp(text)
+            detected_entities = []
             
-            for ent in doc.ents:
+            # Check if there is an NER pipe and if it supports beam search
+            # Note: beam search is available for transition-based NER (most sm/md/lg models)
+            if "ner" in self.nlp.pipe_names:
+                ner = self.nlp.get_pipe("ner")
+                
+                # Pre-process doc with preceding pipes (tok2vec, tagger, etc.)
+                doc = self.nlp.make_doc(text)
+                for name, proc in self.nlp.pipeline:
+                    if name != "ner":
+                        doc = proc(doc)
+                
+                # Use beam search to get multiple parses and aggregate scores
+                # beam_width can be adjusted for speed vs accuracy
+                beams = ner.beam_parse([doc], beam_width=16, beam_density=0.0001)
+                
+                entity_scores = defaultdict(float)
+                for score, ents in ner.moves.get_beam_parses(beams[0]):
+                    for start, end, label in ents:
+                        # Aggregate probability of paths containing this entity
+                        entity_scores[(start, end, label)] += score
+                
+                for (start, end, label), confidence in entity_scores.items():
+                    span = doc[start:end]
+                    detected_entities.append({
+                        "text": span.text,
+                        "label": label,
+                        "start": span.start_char,
+                        "end": span.end_char,
+                        "confidence": confidence
+                    })
+            else:
+                # Fallback to standard doc.ents if NER pipe is not found
+                doc = self.nlp(text)
+                for ent in doc.ents:
+                    detected_entities.append({
+                        "text": ent.text,
+                        "label": ent.label_,
+                        "start": ent.start_char,
+                        "end": ent.end_char,
+                        "confidence": 1.0  # Default confidence
+                    })
+
+            for ent in detected_entities:
                 entity_type = None
-                
+                label = ent["label"]
+                confidence = ent["confidence"]
+
                 # Map SpaCy entity labels to our types
-                if ent.label_ in ["PERSON", "PER"] and self.settings.get('anonymize_names', True):
+                if label in ["PERSON", "PER"] and self.settings.get('anonymize_names', True):
                     entity_type = "PERSON"
-                elif ent.label_ in ["ORG", "ORGANIZATION"] and self.settings.get('anonymize_organizations', True):
+                elif label in ["ORG", "ORGANIZATION"] and self.settings.get('anonymize_organizations', True):
                     entity_type = "ORGANIZATION"
-                elif ent.label_ in ["GPE", "LOC", "LOCATION", "FAC", "FACILITY"] and self.settings.get('anonymize_locations', True):
-                    # GPE: Countries, cities, states
-                    # LOC: Mountain ranges, bodies of water
-                    # FAC: Buildings, airports, highways, bridges
+                elif label in ["GPE", "LOC", "LOCATION", "FAC", "FACILITY"] and self.settings.get('anonymize_locations', True):
                     entity_type = "LOCATION"
-                
+
                 if entity_type:
+                    # Filter by confidence threshold
+                    log.error(f"Entity '{ent['text']}' ({entity_type}) detected with confidence: {confidence:.4f}")
+                    if confidence < self.confidence_threshold:
+                        log.error(f"Entity '{ent['text']}' skipped (confidence below threshold {self.confidence_threshold})")
+                        continue
+                    
                     spans.append((
-                        ent.start_char,
-                        ent.end_char,
+                        ent["start"],
+                        ent["end"],
                         entity_type,
-                        ent.text
+                        ent["text"]
                     ))
-            
+
         except Exception as e:
-            logger.error(f"Error in SpaCy NER processing: {e}")
+            log.error(f"Error in SpaCy detection: {e}")
             return []
-        
+
         # Remove overlapping spans
         return self._remove_overlaps(spans)
-    
+
     def _remove_overlaps(self, spans: List[Tuple[int, int, str, str]]) -> List[Tuple[int, int, str, str]]:
         """Remove overlapping spans, preferring longer matches."""
         if not spans:
             return spans
-            
+
         # Sort by start position, then by length (descending)
         spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
-        
+
         non_overlapping = []
         last_end = -1
-        
+
         for span in spans:
             start, end, entity_type, text = span
             if start >= last_end:
                 non_overlapping.append(span)
                 last_end = end
-        
+
         return non_overlapping
 
 
@@ -318,7 +349,6 @@ def create_detector(detector_type: str, **kwargs) -> object:
         try:
             return SpacyPIIDetector(settings=kwargs.get('settings'), **{k: v for k, v in kwargs.items() if k != 'settings'})
         except RuntimeError as e:
-            logger.error(f"Failed to initialize SpaCy detector: {e}")
             raise
     else:
         raise ValueError(f"Unknown detector type: {detector_type}. Supported types: 'regex', 'spacy'")
@@ -344,4 +374,3 @@ def check_and_download_spacy_models(model_preference: List[str] = None) -> bool:
         return True
         
     return False
-    
