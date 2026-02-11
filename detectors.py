@@ -171,7 +171,7 @@ class SpacyPIIDetector:
     Supports multilingual detection.
     """
     
-    def __init__(self, model_preference: List[str] = None, settings=None, confidence_threshold: float = 0.65):
+    def __init__(self, model_preference: List[str] = None, settings=None, confidence_threshold: float = 0.45):
         """
         Initialize SpaCy detector with automatic model downloading.
 
@@ -289,9 +289,9 @@ class SpacyPIIDetector:
 
                 if entity_type:
                     # Filter by confidence threshold
-                    log.error(f"Entity '{ent['text']}' ({entity_type}) detected with confidence: {confidence:.4f}")
+                    # log.info(f"Entity '{ent['text']}' ({entity_type}) detected with confidence: {confidence:.4f}")
                     if confidence < self.confidence_threshold:
-                        log.error(f"Entity '{ent['text']}' skipped (confidence below threshold {self.confidence_threshold})")
+                        # log.info(f"Entity '{ent['text']}' skipped (confidence below threshold {self.confidence_threshold})")
                         continue
                     
                     spans.append((
