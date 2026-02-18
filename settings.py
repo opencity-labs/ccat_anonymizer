@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from cat.mad_hatter.decorators import plugin
 
 
@@ -64,6 +64,19 @@ class PluginSettings(BaseModel):
         default=False,
         description="If checked, the allowedlist database will be deleted when settings are saved. This action cannot be undone.",
     )
+    confidence_threshold: float = Field(
+        title="Confidence Threshold",
+        default=0.45,
+        description="Minimum confidence score for entity detection using SpaCy NER. Must be between 0 and 1.",
+    )
+
+    @validator("confidence_threshold")
+    def validate_confidence_threshold(cls, v):
+        """Validate that confidence_threshold is between 0 and 1."""
+        if not 0 <= v <= 1:
+            raise ValueError("Confidence threshold must be between 0 and 1.")
+        return v
+
 
 @plugin
 def settings_model():
