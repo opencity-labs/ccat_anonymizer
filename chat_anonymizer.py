@@ -327,7 +327,6 @@ def cat_recall_query(user_message: str, cat) -> str:
     """
     Anonymize user message before it is used for memory recall.
     """
-
     try:
         settings = cat.mad_hatter.get_plugin().load_settings()
 

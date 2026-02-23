@@ -299,6 +299,7 @@ class SpacyPIIDetector:
                     )
 
             for ent in detected_entities:
+                log.error(ent)
                 entity_type = None
                 label = ent["label"]
                 confidence = ent["confidence"]
