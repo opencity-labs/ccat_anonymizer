@@ -328,6 +328,10 @@ def cat_recall_query(user_message: str, cat) -> str:
     Anonymize user message before it is used for memory recall.
     """
     try:
+        # Check if this message was already anonymized in before_cat_reads_message
+        if "anonymized_user_message_text" in cat.working_memory:
+            return cat.working_memory.anonymized_user_message_text
+
         settings = cat.mad_hatter.get_plugin().load_settings()
 
         if not user_message:
@@ -391,6 +395,9 @@ def before_cat_reads_message(user_message_json: dict, cat) -> dict:
             return user_message_json
 
         anonymized_message, mapping = anonymize_text(user_message, cat)
+
+        # Store for recall hook to skip re-anonymization
+        cat.working_memory.anonymized_user_message_text = anonymized_message
 
         # Check if reversible chat is enabled
         reversible_chat = settings.get("reversible_chat", True)

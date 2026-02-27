@@ -234,6 +234,17 @@ class SpacyPIIDetector:
                     "and ensure you have sufficient permissions to download models."
                 )
 
+    def _is_valid_entity(self, span, label):
+        """
+        Check if an entity is valid based on heuristics.
+        """
+        # Heuristic: Person names are usually short (2-3 tokens, max 5)
+        if label in ["PERSON", "PER"]:
+            if len(span) > 5:
+                return False
+
+        return True
+
     def detect(self, text: str) -> List[Tuple[int, int, str, str]]:
         """
         Detect person names, organizations, and locations using SpaCy NER with confidence scores.
@@ -275,6 +286,10 @@ class SpacyPIIDetector:
 
                 for (start, end, label), confidence in entity_scores.items():
                     span = doc[start:end]
+
+                    if not self._is_valid_entity(span, label):
+                        continue
+
                     detected_entities.append(
                         {
                             "text": span.text,
@@ -288,6 +303,9 @@ class SpacyPIIDetector:
                 # Fallback to standard doc.ents if NER pipe is not found
                 doc = self.nlp(text)
                 for ent in doc.ents:
+                    if not self._is_valid_entity(ent, ent.label_):
+                        continue
+
                     detected_entities.append(
                         {
                             "text": ent.text,
