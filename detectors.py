@@ -87,9 +87,9 @@ def _get_spacy_model(model_name: str):
 
 class RegexPIIDetector:
     """
-    Regex-based PII detection for emails, phone numbers, and Italian fiscal codes.
+    Regex-based PII detection for emails, phone numbers, Italian fiscal codes, and Italian license plates.
 
-    This detector uses regular expressions to identify emails, phone numbers, and Italian fiscal codes.
+    This detector uses regular expressions to identify emails, phone numbers, Italian fiscal codes, and Italian license plates.
     """
 
     def __init__(self, settings=None):
@@ -117,6 +117,11 @@ class RegexPIIDetector:
         # Italian fiscal code pattern: 6 letters, 2 numbers, 1 letter, 2 numbers, 1 letter, 3 numbers, 1 letter
         self.fiscal_code_pattern = re.compile(
             r"\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b"
+        )
+
+        # Italian license plate pattern: AA000AA or AA 000 AA
+        self.license_plate_pattern = re.compile(
+            r"\b[A-Z]{2}(?:[0-9]{3}| [0-9]{3} )[A-Z]{2}\b", re.IGNORECASE
         )
 
     def detect(self, text: str) -> List[Tuple[int, int, str, str]]:
@@ -150,6 +155,11 @@ class RegexPIIDetector:
         if self.settings.get("anonymize_fiscal_code", True):
             for match in self.fiscal_code_pattern.finditer(text):
                 spans.append((match.start(), match.end(), "FISCAL_CODE", match.group()))
+
+        # Italian license plate detection
+        if self.settings.get("anonymize_license_plate", True):
+            for match in self.license_plate_pattern.finditer(text):
+                spans.append((match.start(), match.end(), "LICENSE_PLATE", match.group()))
 
         # Remove overlapping spans (prefer longer ones, then by position)
         return self._remove_overlaps(spans)

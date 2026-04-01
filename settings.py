@@ -29,6 +29,11 @@ class PluginSettings(BaseModel):
         default=True,
         description="Anonymize Italian fiscal codes in text.",
     )
+    anonymize_license_plate: bool = Field(
+        title="Anonymize License Plate",
+        default=True,
+        description="Anonymize Italian license plates in text (e.g. AA000AA or AA 000 AA).",
+    )
     anonymize_names: bool = Field(
         title="Anonymize Names",
         default=True,
